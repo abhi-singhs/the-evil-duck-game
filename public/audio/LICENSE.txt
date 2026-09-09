@@ -1,0 +1,26 @@
+Chibi Ninja
+
+Artist: Eric Skiff
+Album: Resistor Anthems
+Source: https://ericskiff.com/music/
+Original MP3: https://ericskiff.com/music/Resistor%20Anthems/03%20Chibi%20Ninja.mp3
+Local file: chibi-ninja.mp3
+
+License: Creative Commons Attribution 4.0 International, CC BY 4.0
+License URL: https://creativecommons.org/licenses/by/4.0/
+Legal code: https://creativecommons.org/licenses/by/4.0/legalcode
+
+Attribution, following the artist's template:
+Music: Eric Skiff - Chibi Ninja - Resistor Anthems - Available at http://EricSkiff.com/music
+
+The artist's source page states that all songs are released under CC BY 4.0.
+The bundled MP3 is the original download. The audio is unchanged.
+The game repeats playback with the audio element's loop setting.
+This license does not imply that Eric Skiff endorses the game.
+
+Downloaded September 9, 2026.
+File size: 2,961,160 bytes
+SHA-256: 053fa0e9dbb9a9ad8461b76738e021f459ca19f9271c788d5ae8e7d30380441d
+
+The game synthesizes its sound effects with Web Audio oscillators and noise.
+The sound effects do not sample this recording.
