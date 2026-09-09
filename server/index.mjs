@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { extname, join, resolve, sep } from 'node:path'
+import { attachGameServer } from './game-server.mjs'
 
 const root = resolve(import.meta.dirname, '..', 'dist')
 const port = Number(process.env.PORT ?? 8080)
@@ -122,8 +123,14 @@ const server = createServer((request, response) => {
   })
 })
 
+// The co-op fight runs in this process, on /ws, beside the files it serves. One origin, one duck.
+const game = attachGameServer(server)
+
 server.listen(port, () => console.log(`the evil duck is listening on ${port}`))
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
-  process.on(signal, () => server.close(() => process.exit(0)))
+  process.on(signal, () => {
+    game.close()
+    server.close(() => process.exit(0))
+  })
 }

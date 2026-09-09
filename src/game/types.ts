@@ -12,6 +12,8 @@ export type PlayerCommand = {
 
 export type PlayerState = {
   id: string
+  name: string
+  connected: boolean
   sequence: number
   aim: Point
   trigger: boolean
@@ -56,12 +58,15 @@ export type Projectile = {
 
 export type GameState = {
   status: RunStatus
+  /** Co-op unlocks weapons on team damage, so one player's pistol run does not strand the group. */
+  coop: boolean
   seed: number
   rng: number
   tick: number
   elapsed: number
   duration: number
   duck: DuckState
+  teamDamage: number
   players: Record<string, PlayerState>
   projectiles: Projectile[]
   threats: Threat[]
@@ -74,7 +79,7 @@ export type GameEvent =
   | { type: 'shot'; playerId: string; weapon: WeaponId; aim: Point; hit: boolean }
   | { type: 'damage'; playerId: string; amount: number; position: Point }
   | { type: 'explosion'; position: Point }
-  | { type: 'attack'; position: Point }
+  | { type: 'attack'; playerId: string; position: Point }
   | { type: 'intercept'; playerId: string; position: Point }
   | { type: 'hurt'; playerId: string; position: Point; hp: number }
   | { type: 'unlock'; playerId: string; weapon: WeaponId }

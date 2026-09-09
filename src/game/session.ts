@@ -3,15 +3,23 @@ import { applyCommand, clearTriggers, createGame, stepGame } from './simulation'
 import type { GameEvent, GameState, PlayerCommand } from './types'
 
 export interface GameSession {
+  /** The id this browser's commands carry. Solo play is always `local`. */
+  readonly playerId: string
+  /** Solo can stop the world. A shared fight cannot, so co-op only drops the trigger. */
+  readonly canPause: boolean
   command(command: PlayerCommand): boolean
   snapshot(): GameState
   advance(seconds: number): GameEvent[]
   start(): void
+  restart(): void
   pause(): void
   resume(): void
+  dispose(): void
 }
 
 export class LocalSession implements GameSession {
+  readonly playerId = 'local'
+  readonly canPause = true
   private state: GameState
   private accumulator = 0
 
@@ -31,6 +39,12 @@ export class LocalSession implements GameSession {
     if (this.state.status === 'ready') this.state.status = 'running'
   }
 
+  restart() {
+    this.state = createGame(Math.floor(Math.random() * 1_000_000))
+    this.accumulator = 0
+    this.state.status = 'running'
+  }
+
   pause() {
     if (this.state.status === 'running') {
       this.state.status = 'paused'
@@ -42,6 +56,8 @@ export class LocalSession implements GameSession {
   resume() {
     if (this.state.status === 'paused') this.state.status = 'running'
   }
+
+  dispose() {}
 
   advance(seconds: number): GameEvent[] {
     if (this.state.status !== 'running' || !Number.isFinite(seconds) || seconds <= 0) return []

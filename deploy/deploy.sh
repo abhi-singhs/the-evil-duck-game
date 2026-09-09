@@ -83,5 +83,12 @@ curl -fsS -o /dev/null -w 'health %{http_code} in %{time_total}s\n' "https://$fq
 curl -fsS -o /dev/null -w 'index  %{http_code} in %{time_total}s\n' "https://$fqdn/"
 # Safari refuses to play the music unless the server answers byte ranges.
 curl -fsS -r 0-99 -o /dev/null -w 'audio  %{http_code} (expect 206)\n' "https://$fqdn/audio/chibi-ninja.mp3"
+# Co-op lives or dies on the upgrade handshake, so check it rather than assume the ingress passes it.
+# A successful upgrade holds the connection open, hence the timeout and the tolerated exit code.
+socket=$(curl -s -o /dev/null --max-time 6 -w '%{http_code}' \
+  -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "https://$fqdn/ws" || true)
+echo "socket $socket (expect 101)"
+[ "$socket" = "101" ] || { echo "the game endpoint did not upgrade" >&2; exit 1; }
 
 say "Live at https://$fqdn"

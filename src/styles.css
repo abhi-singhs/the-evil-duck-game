@@ -282,6 +282,80 @@ a { color: var(--cp-accent); }
 .settings .check > span { float: none; font: inherit; color: inherit; }
 .settings .check input { accent-color: var(--cp-accent); width: 18px; height: 18px; }
 
+/* Co-op: the join screen, the lobby, and the team panel that sits over the arena. */
+.app-centered { justify-content: flex-start; }
+.coop-panel {
+  width: min(420px, 100%); margin: 24px auto auto;
+  display: flex; flex-direction: column; gap: 16px; text-align: center;
+  border: 1px solid var(--cp-border); border-radius: 16px;
+  background: var(--cp-surface); padding: 28px 24px;
+}
+.coop-panel h2 { margin: 0; font-size: 20px; letter-spacing: -0.5px; }
+.coop-lede { margin: 0; font-size: 13px; line-height: 1.7; color: var(--cp-text-soft); }
+.coop-count { margin: 0; font: 10px var(--mono); letter-spacing: 1px; color: var(--cp-text-muted); }
+.coop-problem { margin: 0; font-size: 12px; color: var(--cp-danger); }
+.coop-panel .link-button { align-self: center; }
+.field { display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.field > span { font: 9px var(--mono); letter-spacing: 1.5px; color: var(--cp-text-muted); }
+.field input {
+  min-height: 48px; padding: 0 14px; border-radius: 0.625rem;
+  border: 1px solid var(--cp-border); background: var(--cp-bg);
+  color: var(--cp-text); font: 700 15px var(--mono); letter-spacing: 2px;
+}
+.field input:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 1px; }
+.secondary-button {
+  min-height: 48px; padding: 0 20px; border-radius: 0.625rem;
+  border: 1px solid var(--cp-border-strong); color: var(--cp-text);
+  font: 700 11px var(--mono); letter-spacing: 1.5px;
+}
+.secondary-button:hover:not(:disabled) { border-color: var(--cp-accent); color: var(--cp-accent); }
+.secondary-button:disabled { opacity: 0.4; }
+.secondary-button[aria-pressed="true"] { border-color: var(--cp-success); color: var(--cp-success); }
+.coop-divider {
+  display: flex; align-items: center; gap: 12px;
+  font: 9px var(--mono); letter-spacing: 1.5px; color: var(--cp-text-muted);
+}
+.coop-divider::before, .coop-divider::after { content: ""; flex: 1; height: 1px; background: var(--cp-border); }
+.coop-code { display: flex; align-items: flex-end; gap: 10px; }
+.coop-code .field { flex: 1; }
+.coop-share { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.coop-share code {
+  font: 700 26px var(--mono); letter-spacing: 6px; color: var(--cp-accent);
+  padding-left: 6px;
+}
+.coop-actions { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.coop-actions .coop-lede { flex-basis: 100%; }
+.roster {
+  list-style: none; margin: 0; padding: 0; text-align: left;
+  max-height: 260px; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px;
+}
+.roster li { display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 12px; }
+.roster li.gone { opacity: 0.45; }
+.roster .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cp-border-strong); flex-shrink: 0; }
+.roster .dot.on { background: var(--cp-success); }
+.roster-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag { font: 8px var(--mono); letter-spacing: 1px; color: var(--cp-text-muted); flex-shrink: 0; }
+.tag.you { color: var(--cp-accent); }
+.room-chip { font: 10px var(--mono); letter-spacing: 1.5px; color: var(--cp-accent); }
+
+.team-panel {
+  position: absolute; top: 10px; right: 10px; width: 168px;
+  background: var(--cp-panel-strong); border-radius: 10px; padding: 8px 10px;
+  font: 10px var(--mono); color: var(--cp-text); pointer-events: none;
+}
+.team-panel header { display: flex; justify-content: space-between; letter-spacing: 1px; color: var(--cp-text-muted); }
+.team-total { color: var(--cp-accent); }
+.team-alive { margin: 4px 0 6px; color: var(--cp-text-muted); }
+.team-panel ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.team-panel li { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: baseline; }
+.team-panel li.me .team-name { color: var(--cp-accent); }
+.team-panel li.down { opacity: 0.4; }
+.team-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-hp { color: var(--cp-success); letter-spacing: -1px; }
+.team-damage { font-variant-numeric: tabular-nums; color: var(--cp-text-muted); }
+.team-more { margin: 6px 0 0; color: var(--cp-text-muted); }
+
 @media (max-width: 720px) {
   .app { padding: 0 14px; gap: 12px; }
   .bar { min-height: 56px; }
@@ -293,6 +367,8 @@ a { color: var(--cp-accent); }
   .stats { gap: 22px; }
   .stats dd { font-size: 18px; }
   .overlay { gap: 16px; }
+  .team-panel { width: 132px; font-size: 9px; }
+  .coop-panel { padding: 22px 18px; }
 }
 @media (max-width: 560px) {
   .hud { flex-wrap: wrap; gap: 8px 14px; }
@@ -331,6 +407,9 @@ a { color: var(--cp-accent); }
   .weapon svg { width: 24px; }
   .overlay { gap: 14px; }
   .overlay h1 { font-size: 26px; letter-spacing: -1.5px; }
+  .team-panel { width: 118px; padding: 6px 8px; }
+  .app-centered { overflow-y: auto; }
+  .coop-panel { margin-top: 4px; padding: 16px; gap: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; }

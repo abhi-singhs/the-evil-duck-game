@@ -5,13 +5,22 @@ import { WEAPONS, WEAPON_ORDER, WORLD } from './config'
 import { worldPoint } from './input'
 import { GameRenderer } from './renderer'
 import { LocalSession } from './session'
+import type { GameSession } from './session'
+import { createPlayer } from './simulation'
 import type { GameEvent, GameState, Point, WeaponId } from './types'
 
-export function useGame(settings: Settings, onComplete: (state: GameState) => void) {
-  const [initialSession] = useState(() => new LocalSession())
-  const session = useRef(initialSession)
-  const [state, setState] = useState(() => initialSession.snapshot())
-  const [notice, setNotice] = useState('The duck is waiting. It does not look patient.')
+const READY_NOTICE = 'The duck is waiting. It does not look patient.'
+
+export function useGame(
+  settings: Settings,
+  onComplete: (state: GameState) => void,
+  provided?: GameSession,
+) {
+  // A co-op session is created by an event handler and owned by the caller, so this hook never
+  // opens or closes a socket. Solo play gets a local session and keeps it for the component's life.
+  const [active] = useState<GameSession>(() => provided ?? new LocalSession())
+  const [state, setState] = useState(() => active.snapshot())
+  const [notice, setNotice] = useState(READY_NOTICE)
   const [error, setError] = useState<string | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const renderer = useRef<GameRenderer | null>(null)
@@ -23,6 +32,11 @@ export function useGame(settings: Settings, onComplete: (state: GameState) => vo
   const keys = useRef(new Set<string>())
   const settingsRef = useRef(settings)
 
+  const localPlayer = useCallback((snapshot: GameState) => {
+    const id = active.playerId
+    return Object.hasOwn(snapshot.players, id) ? snapshot.players[id] : createPlayer(id)
+  }, [active])
+
   const clearInput = useCallback(() => {
     input.current.trigger = false
     activePointer.current = null
@@ -30,41 +44,49 @@ export function useGame(settings: Settings, onComplete: (state: GameState) => vo
   }, [])
 
   const pause = useCallback(() => {
-    session.current.pause()
+    active.pause()
     clearInput()
-    audio.current?.setPlaying(false)
-    setState(session.current.snapshot())
+    if (active.canPause) audio.current?.setPlaying(false)
+    setState(active.snapshot())
+  }, [active, clearInput])
+
+  const resetInput = useCallback(() => {
+    sequence.current = 0
+    input.current = { aim: { x: WORLD.width / 2, y: 240 }, trigger: false, weapon: 'pistol' }
+    clearInput()
+    visibleAim.current = null
+    renderer.current?.reset()
   }, [clearInput])
 
   const start = useCallback(() => {
     audio.current?.unlock()
-    if (session.current.snapshot().status === 'paused') {
-      session.current.resume()
+    const status = active.snapshot().status
+    if (status === 'paused') {
+      active.resume()
+    } else if (status === 'ready') {
+      resetInput()
+      active.start()
+      setNotice('Hunt started. Aim at the duck and hold to fire.')
     } else {
-      session.current = new LocalSession()
-      sequence.current = 0
-      input.current = { aim: { x: WORLD.width / 2, y: 240 }, trigger: false, weapon: 'pistol' }
-      clearInput()
-      visibleAim.current = null
-      renderer.current?.reset()
-      session.current.start()
+      resetInput()
+      active.restart()
       setNotice('Hunt started. Aim at the duck and hold to fire.')
     }
     audio.current?.setPlaying(true)
-    setState(session.current.snapshot())
+    setState(active.snapshot())
     canvas.current?.focus({ preventScroll: true })
-  }, [clearInput])
+  }, [active, resetInput])
 
   const selectWeapon = useCallback((weapon: WeaponId) => {
-    const snapshot = session.current.snapshot()
+    const snapshot = active.snapshot()
     if (snapshot.status !== 'running') return
-    if (!snapshot.players.local.unlocked.includes(weapon)) {
+    if (!localPlayer(snapshot).unlocked.includes(weapon)) {
       setNotice(`${WEAPONS[weapon].name} unlocks at ${Math.round(WEAPONS[weapon].unlock * 100)}% damage.`)
       return
     }
     input.current.weapon = weapon
     setNotice(`${WEAPONS[weapon].name} equipped. ${WEAPONS[weapon].description}`)
-  }, [])
+  }, [active, localPlayer])
 
   useEffect(() => {
     settingsRef.current = settings
@@ -81,6 +103,7 @@ export function useGame(settings: Settings, onComplete: (state: GameState) => vo
     }
     const view = new GameRenderer(element)
     view.setReducedMotion(settingsRef.current.reducedMotion)
+    view.setLocalPlayer(active.playerId)
     renderer.current = view
     const sound = new AudioEngine(setError)
     sound.setSettings(settingsRef.current)
@@ -90,33 +113,36 @@ export function useGame(settings: Settings, onComplete: (state: GameState) => vo
     let lastHud = 0
 
     const handleEvents = (events: GameEvent[]) => {
+      const me = active.playerId
       view.push(events)
       for (const event of events) {
-        if (event.type === 'shot') sound.playShot(event.weapon)
-        if (event.type === 'intercept') sound.playCue('block')
-        if (event.type === 'hurt') {
+        // In a fifty-player room every teammate's shot would arrive as noise, so audio and
+        // messages stay personal while the arena still shows everyone's work.
+        if (event.type === 'shot' && event.playerId === me) sound.playShot(event.weapon)
+        if (event.type === 'intercept' && event.playerId === me) sound.playCue('block')
+        if (event.type === 'hurt' && event.playerId === me) {
           sound.playCue('hurt')
           setNotice(event.hp > 0
             ? `Hit. ${event.hp} health left. Shoot the duck's attacks before they reach you.`
             : 'You are down.')
         }
-        if (event.type === 'unlock') {
+        if (event.type === 'unlock' && event.playerId === me) {
           sound.playCue('unlock')
           setNotice(`${WEAPONS[event.weapon].name} unlocked. Select it below or press ${WEAPON_ORDER.indexOf(event.weapon) + 1}.`)
         }
         if (event.type === 'phase') {
           sound.playCue('phase')
-          setNotice(`Phase ${event.phase + 1}. ${event.phase >= 2 ? 'Armor is active. Watch for vulnerable windows.' : 'The duck is getting faster.'}`)
+          setNotice(`Phase ${event.phase + 1}. ${event.phase >= 2 ? 'Armor is up. Watch for vulnerable windows.' : 'The duck is getting faster.'}`)
         }
         if (event.type === 'end') {
-          const final = session.current.snapshot()
+          const final = active.snapshot()
           sound.playCue(event.won ? 'win' : 'lose')
           sound.setPlaying(false)
           clearInput()
           onComplete(final)
           setNotice(event.won
             ? 'Duck defeated. The pond is yours.'
-            : final.players.local.hp === 0 ? 'You were shot down.' : 'Time expired. The duck wins this round.')
+            : localPlayer(final).hp === 0 ? 'You were shot down.' : 'Time expired. The duck wins this round.')
         }
       }
     }
@@ -124,7 +150,7 @@ export function useGame(settings: Settings, onComplete: (state: GameState) => vo
     const tick = (now: number) => {
       const seconds = (now - previous) / 1000
       previous = now
-      const current = session.current.snapshot()
+      const current = active.snapshot()
       if (current.status === 'running') {
         const speed = 440 * Math.min(seconds, 0.05)
         const held = keys.current
@@ -134,11 +160,11 @@ export function useGame(settings: Settings, onComplete: (state: GameState) => vo
           aim.y = Math.max(0, Math.min(WORLD.height, aim.y + (Number(held.has('s') || held.has('arrowdown')) - Number(held.has('w') || held.has('arrowup'))) * speed))
           visibleAim.current = { ...aim }
         }
-        session.current.command({ playerId: 'local', sequence: sequence.current++, ...input.current })
+        active.command({ playerId: active.playerId, sequence: sequence.current++, ...input.current })
       }
-      const events = session.current.advance(seconds)
+      const events = active.advance(seconds)
       handleEvents(events)
-      const snapshot = session.current.snapshot()
+      const snapshot = active.snapshot()
       if (snapshot.status === 'paused' && current.status === 'running') {
         clearInput()
         sound.setPlaying(false)
@@ -162,7 +188,7 @@ export function useGame(settings: Settings, onComplete: (state: GameState) => vo
       return point
     }
     const down = (event: PointerEvent) => {
-      if (session.current.snapshot().status !== 'running' || activePointer.current !== null
+      if (active.snapshot().status !== 'running' || activePointer.current !== null
         || (event.pointerType === 'mouse' && event.button !== 0) || !aimAt(event)) return
       event.preventDefault()
       element.focus({ preventScroll: true })
@@ -189,12 +215,12 @@ export function useGame(settings: Settings, onComplete: (state: GameState) => vo
       if (key === 'escape' || (key === ' ' && (event.target === element || event.target === document.body))) {
         event.preventDefault()
         if (event.repeat) return
-        const status = session.current.snapshot().status
+        const status = active.snapshot().status
         if (status === 'running') pause()
         else if (status === 'paused') start()
         return
       }
-      if (session.current.snapshot().status !== 'running') return
+      if (active.snapshot().status !== 'running') return
       const weapon = WEAPON_ORDER[Number(key) - 1]
       if (weapon) selectWeapon(weapon)
       if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'f'].includes(key)) {
@@ -238,7 +264,17 @@ export function useGame(settings: Settings, onComplete: (state: GameState) => vo
       window.removeEventListener('blur', pause)
       document.removeEventListener('visibilitychange', visibility)
     }
-  }, [clearInput, onComplete, pause, selectWeapon, start])
+  }, [active, clearInput, localPlayer, onComplete, pause, selectWeapon, start])
 
-  return { state, canvas, notice, error, start, pause, selectWeapon }
+  return {
+    state,
+    player: localPlayer(state),
+    session: active,
+    canvas,
+    notice,
+    error,
+    start,
+    pause,
+    selectWeapon,
+  }
 }

@@ -1,8 +1,8 @@
 # The evil duck
 
-A single-player browser boss hunt. One duck has 26,000 HP, throws things at you, and gets worse every 30 seconds. You have two minutes, four weapons, and five lives.
+A browser boss hunt for one player or fifty. One duck has 26,000 HP, throws things at you, and gets worse every 30 seconds. You have two minutes, four weapons, and five lives.
 
-React and TypeScript render the interface. Canvas 2D draws the original pixel art. The game runs locally in the browser without an account or backend.
+React and TypeScript render the interface. Canvas 2D draws the original pixel art. Solo runs entirely in the browser with no account and no backend. Co-op rooms run the fight on a Node server over WebSockets.
 
 ## Run locally
 
@@ -13,14 +13,24 @@ npm install
 npm run dev
 ```
 
+That serves the page and gives you solo play. Co-op also needs the game server, in a second terminal:
+
+```sh
+npm run dev:server
+```
+
+The dev server proxies `/ws` to it, so the browser code is the same in development as in the container.
+
 For a production build and local preview:
 
 ```sh
 npm run build
-npm run preview
+npm run serve
 ```
 
-Vite writes the production site to `dist/`. Serve that directory with a static web host. To host under a subdirectory, build with `npm run build -- --base=/your-path/`. The bundled music uses the same base path.
+`npm run build` writes the site to `dist/` and compiles the game rules to `server/core/game-core.mjs`, which the Node server imports. `npm run serve` then runs the real server on port 8080: static files, byte ranges, health check, and the game endpoint. `npm run preview` still works for the solo game alone.
+
+To host under a subdirectory, build with `npm run build -- --base=/your-path/`. The bundled music uses the same base path.
 
 ## Deploy
 
@@ -42,7 +52,7 @@ Resource names live in `deploy/azure.env` and can be overridden from the shell. 
 | Container Apps environment | `cae-evil-duck` |
 | Container app | `ca-evil-duck` |
 
-`Dockerfile` builds the site and copies it into a runtime image with `server/index.mjs`, a dependency-free Node static server. That server handles byte ranges, which the music needs because Safari will not play a track served without `206` replies. It also answers `/healthz`, and it is where the future game server goes so the browser talks to one origin.
+`Dockerfile` builds the site, compiles the game core, and copies both into a runtime image with `server/index.mjs`. That server handles byte ranges, which the music needs because Safari will not play a track served without `206` replies. It answers `/healthz`, and it runs the co-op fight on `/ws`, so the browser talks to one origin.
 
 Three things about this setup are deliberate.
 
@@ -50,7 +60,7 @@ Images build in ACR with `--platform linux/amd64`. A `docker build` on an Apple 
 
 The app pulls with its own managed identity holding `AcrPull`, and the registry's admin user is disabled. The script enables admin briefly on first create only, because the app has no identity until it exists, then turns it back off.
 
-Replicas are pinned to exactly one. A multiplayer room is a single authoritative process, so a second replica would mean a second duck.
+Replicas are pinned to exactly one. A room is a single authoritative process, so a second replica would mean a second duck. Container Apps ingress passes WebSockets on HTTP/1.1 with the default transport, and the server pings every socket every 15 seconds, well inside the 240-second idle timeout.
 
 Two regional notes if you redeploy elsewhere. This subscription has zero VM quota in `eastus`, which blocks App Service there at every tier, and a room lives in one region, so pick the one nearest the players.
 
@@ -80,11 +90,35 @@ The game pauses when the tab becomes hidden, the window loses focus, or a frame 
 
 Portrait and landscape layouts use the same logical playfield. The page follows the device's light or dark preference. Append `?scoutTheme=dark` or `?scoutTheme=light` to override it.
 
+## Play together
+
+Click "Play together", pick a name, and start a room. You get a four-character code and a link. Anyone with either one joins the same duck, up to 50 players.
+
+The room waits in a lobby between runs. Members can mark themselves ready, and the host starts the hunt. The host is whoever has been connected longest; if they leave, the next member takes over, so a room never loses its start button.
+
+Four rules change in a room.
+
+The duck keeps its 26,000 HP however many of you turn up. Fifty players tear through it in seconds, which is the point.
+
+Weapons unlock on the team's damage rather than yours. The thresholds are the same 10%, 25%, and 45%, so everyone gets rockets at roughly the same moment.
+
+Eggs are still addressed to one hunter at a time, at the same rate as solo. In a full room you will rarely be the target. Your five lives are yours, and the run only ends when the whole room is down or the clock expires.
+
+Nobody can pause a shared fight. The pause button and Escape drop your trigger and nothing else. Losing focus or hiding the tab does the same.
+
+Joining is lobby-only. Arrive while a hunt is running and you hold a seat until the next round. When a run ends the result stays up for a few seconds, then the room returns to the lobby.
+
+Drop your connection mid-run and the game keeps your seat, your damage, and your lives for as long as the run lasts. Reconnecting reclaims it. The duck stops throwing eggs at a seat nobody is sitting in.
+
+Co-op runs do not touch your local best scores. Those are for solo.
+
 ## Game code
 
 `src/game/simulation.ts` contains the rules. It has no browser or React dependency. Movement is seeded, updates run at a fixed 60 Hz, and all combat uses simulation time. `config.ts` contains weapon stats and fight settings.
 
-`session.ts` hosts the solo simulation. It accepts sequenced player commands and returns copied, serializable snapshots and events. Rendering and audio cannot mutate its authoritative state. `renderer.ts` draws the scene. `useGame.ts` connects the session to browser input, audio, and the React interface.
+`session.ts` defines `GameSession` and hosts the solo simulation. It accepts sequenced player commands and returns copied, serializable snapshots and events. Rendering and audio cannot mutate its authoritative state. `renderer.ts` draws the scene. `useGame.ts` connects a session to browser input, audio, and the React interface, and it does not care which kind it gets.
+
+`src/net/RemoteSession.ts` is the other implementation. It sends commands and draws what comes back.
 
 ```sh
 npm test
@@ -92,9 +126,33 @@ npm run lint
 npm run build
 ```
 
-The unit tests cover combat, cooldowns, heat, unlock thresholds, phase progression, attack spawning, interception, player death, deadline ordering, deterministic balance scenarios, session isolation, frame-rate equivalence, and coordinate mapping.
+The unit tests cover combat, cooldowns, heat, unlock thresholds, phase progression, attack spawning, interception, player death, deadline ordering, deterministic balance scenarios, session isolation, frame-rate equivalence, coordinate mapping, co-op unlocks, disconnect handling, message validation, room capacity, host transfer, reconnection, and a live server that fifty sockets join and a fifty-first cannot.
 
 The balance scenarios play the fight rather than only proving the duck can lose health. Perfect aim wins at 54s without losing a life, 65% aim wins at 95s, and 20% aim gets killed at 82s. One scenario plays perfectly but never defends, and dies for it.
+
+## The co-op server
+
+`server/index.mjs` serves files and hands `/ws` to `server/game-server.mjs`. `server/rooms.mjs` holds the rooms. One interval steps every running room at a fixed 60 Hz against real elapsed time, so a busy event loop slows the tick rate rather than the fight.
+
+The server owns the clock, the duck, hit detection, and health. Clients send aim, a trigger, a weapon, and a sequence number. Nothing a client sends carries damage or boss health, so a tampered browser can only lie about where it is pointing. The server rejects out-of-range aim, replayed sequences, and weapons a player has not unlocked, then rate limits what survives.
+
+The rules run as one copy, not two. `npm run build:core` bundles `src/game/simulation.ts` and the protocol into `server/core/game-core.mjs`, so the server enforces the same TypeScript the browser and the unit tests run.
+
+Bandwidth is the constraint, not CPU. A full room measured 12.6 Mbps and about 32 KB/s per client with all fifty firing:
+
+```sh
+node server/loadtest.mjs
+```
+
+Three decisions got it there from an initial 64 Mbps.
+
+Snapshots go out at 20 Hz, not 60, and the client interpolates between the two frames bracketing a moment 100 ms in the past.
+
+Aim and the scoreboard travel separately. Every snapshot carries `[id, x, y, firing]` per teammate, because position is what has to be smooth. Health, damage, and weapon ride a slower message at 4 Hz. Player ids are `p0` through `p49` rather than UUIDs, since fifty UUIDs would be 1.8 KB of pure identifier twenty times a second.
+
+You get all of your own events. Of everyone else's, you get rocket blasts and teammates taking hits, capped per batch. Their muzzle flashes are already implied by the crosshairs in every snapshot, and fifty players' worth of them was two thirds of the traffic.
+
+Concurrent rooms need routing by room ID before `--max-replicas` can rise above one, since raising it alone would split a room across replicas.
 
 ## Music and artwork
 
@@ -113,13 +171,3 @@ Duck sprites, scenery, and weapon icons are original to this game. The page chro
 The code and the original artwork are MIT licensed. See [LICENSE](LICENSE).
 
 `public/audio/chibi-ninja.mp3` is the exception. It is Eric Skiff's work under CC BY 4.0, not MIT, and the attribution travels with it. Keep the credit in the game and [`public/audio/LICENSE.txt`](public/audio/LICENSE.txt) intact, or replace the track.
-
-## A future shared-duck demo
-
-This version is single-player. It does not implement or claim tested support for 50 networked players.
-
-The game rules already distinguish shared duck state from per-player cooldowns, heat, damage, unlocks, and lives. Commands carry a player ID, sequence, aim, trigger, and selected weapon. Players never submit calculated damage or boss health. Attacks are addressed to one player, so a landed egg costs only that player a life, and simulation tests cover two players damaging the same duck without sharing cooldowns or health.
-
-To add the planned cooperative demo, host the simulation on a server and replace the local session adapter with a network client. The server should own the timer, movement, hit detection, and health. Add rooms capped at 50 players, validated and rate-limited commands, snapshot broadcasts, reconnect handling, and clock synchronization. Tune boss health and individual unlock thresholds for the group, then load-test 50 simultaneous connections. Browser timers and local scores are not an anti-cheat boundary.
-
-The deployment already suits this. `server/index.mjs` is the process that would run the fixed-step loop and the WebSocket endpoint, and the container app is pinned to one replica so every socket in a room reaches the same duck. Watch bandwidth rather than CPU: broadcasting all 50 players at 60 Hz is roughly 20 Mbps per room, while sending each client the duck, the live threats, and its own player at 20 Hz is closer to 1 Mbps. Concurrent rooms need routing by room ID, since raising `--max-replicas` alone would split a room across replicas.
