@@ -4,7 +4,10 @@ import { drawDuck, readPalette } from './sprites'
 import type { Palette } from './sprites'
 import type { GameEvent, GameState, Point, Threat } from './types'
 
-type Effect = { kind: 'hit' | 'miss' | 'explosion' | 'number' | 'block'; x: number; y: number; age: number; amount: number }
+type Effect = {
+  kind: 'hit' | 'miss' | 'explosion' | 'number' | 'block'
+  x: number; y: number; age: number; amount: number; mine: boolean
+}
 
 export class GameRenderer {
   private context: CanvasRenderingContext2D
@@ -16,6 +19,7 @@ export class GameRenderer {
   private clock = 0
   private phaseBanner = 0
   private reducedMotion = false
+  private localId = 'local'
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -26,25 +30,31 @@ export class GameRenderer {
   }
 
   setReducedMotion(reduced: boolean) { this.reducedMotion = reduced }
+  setLocalPlayer(id: string) { this.localId = id }
   refreshPalette() { this.palette = readPalette() }
 
   push(events: GameEvent[]) {
     for (const event of events) {
       if (event.type === 'shot') {
-        this.effects.push({ kind: event.hit ? 'hit' : 'miss', ...event.aim, age: 0, amount: 0 })
+        const mine = event.playerId === this.localId
+        this.effects.push({ kind: event.hit ? 'hit' : 'miss', ...event.aim, age: 0, amount: 0, mine })
       } else if (event.type === 'damage') {
         this.flash = 0.07
-        this.effects.push({ kind: 'number', ...event.position, age: 0, amount: event.amount })
+        const mine = event.playerId === this.localId
+        this.effects.push({ kind: 'number', ...event.position, age: 0, amount: event.amount, mine })
       } else if (event.type === 'explosion') {
-        this.effects.push({ kind: 'explosion', ...event.position, age: 0, amount: 0 })
+        this.effects.push({ kind: 'explosion', ...event.position, age: 0, amount: 0, mine: true })
       } else if (event.type === 'intercept') {
-        this.effects.push({ kind: 'block', ...event.position, age: 0, amount: 0 })
+        const mine = event.playerId === this.localId
+        this.effects.push({ kind: 'block', ...event.position, age: 0, amount: 0, mine })
       } else if (event.type === 'hurt') {
-        this.hurt = 0.5
-        this.effects.push({ kind: 'explosion', ...event.position, age: 0, amount: 0 })
+        // Only your own hits shake the screen. Forty-nine teammates taking eggs would be unplayable.
+        if (event.playerId === this.localId) this.hurt = 0.5
+        this.effects.push({ kind: 'explosion', ...event.position, age: 0, amount: 0, mine: event.playerId === this.localId })
       } else if (event.type === 'phase') this.phaseBanner = 2.2
     }
-    this.effects = this.effects.slice(-80)
+    // A full room produces far more effects than one player, so the tail is longer but still bounded.
+    this.effects = this.effects.slice(-220)
   }
 
   reset() { this.effects = []; this.flash = 0; this.hurt = 0; this.phaseBanner = 0; this.clock = 0 }
@@ -125,6 +135,8 @@ export class GameRenderer {
     }
     for (const threat of state.threats) this.drawThreat(threat)
     this.drawEffects()
+    // Teammates first, so your own crosshair always sits on top of the swarm.
+    if (state.coop && state.status === 'running') this.drawTeammates(state)
     if (state.status === 'running' && aim) this.crosshair(aim)
     if (this.hurt > 0) {
       ctx.globalAlpha = Math.min(0.6, this.hurt)
@@ -291,23 +303,50 @@ export class GameRenderer {
     ctx.stroke()
   }
 
+  /**
+   * Teammates are drawn as small dimmed marks rather than full crosshairs. With a full room the
+   * arena has to stay readable, and your own aim must never be the hardest thing on screen to find.
+   */
+  private drawTeammates(state: GameState) {
+    const ctx = this.context
+    const p = this.palette
+    ctx.lineWidth = 2
+    for (const player of Object.values(state.players)) {
+      if (player.id === this.localId) continue
+      const down = player.hp === 0
+      ctx.globalAlpha = down ? 0.16 : player.trigger ? 0.62 : 0.34
+      ctx.strokeStyle = down ? p.muted : player.trigger ? p.warning : p.success
+      const { x, y } = player.aim
+      ctx.beginPath()
+      ctx.arc(x, y, 8, 0, Math.PI * 2)
+      ctx.moveTo(x - 13, y); ctx.lineTo(x - 10, y)
+      ctx.moveTo(x + 10, y); ctx.lineTo(x + 13, y)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+  }
+
   private drawEffects() {
     const ctx = this.context
     const p = this.palette
     for (const effect of this.effects) {
       const duration = effect.kind === 'number' ? 0.8 : 0.45
-      ctx.globalAlpha = Math.max(0, 1 - effect.age / duration)
+      const fade = Math.max(0, 1 - effect.age / duration)
       if (effect.kind === 'number') {
+        // Only your own damage gets a number. Fifty players' worth would bury the duck in text.
+        if (!effect.mine) continue
+        ctx.globalAlpha = fade
         ctx.font = 'bold 20px Consolas, "Courier New", monospace'
         ctx.textAlign = 'center'
         ctx.fillStyle = p.accent
         ctx.fillText(`-${effect.amount}`, effect.x, effect.y - 62 - (this.reducedMotion ? 0 : effect.age * 55))
       } else {
+        ctx.globalAlpha = effect.mine ? fade : fade * 0.4
         ctx.fillStyle = effect.kind === 'miss' ? p.muted : effect.kind === 'block' ? p.success : p.warning
         const radius = this.reducedMotion ? 10 : effect.kind === 'explosion' ? 15 + effect.age * 185 : 7 + effect.age * 45
         for (let i = 0; i < 8; i++) {
           const angle = i * Math.PI / 4
-          const size = effect.kind === 'explosion' ? 8 : 4
+          const size = (effect.kind === 'explosion' ? 8 : 4) * (effect.mine ? 1 : 0.6)
           ctx.fillRect(effect.x + Math.cos(angle) * radius, effect.y + Math.sin(angle) * radius, size, size)
         }
       }

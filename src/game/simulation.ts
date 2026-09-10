@@ -20,27 +20,63 @@ export function threatRadius(threat: Threat): number {
   return THREAT_RADIUS.start + (THREAT_RADIUS.end - THREAT_RADIUS.start) * progress
 }
 
-export function createPlayer(id: string): PlayerState {
+export function createPlayer(id: string, name = 'Hunter'): PlayerState {
   return {
-    id, sequence: -1, aim: { x: WORLD.width / 2, y: WORLD.height / 2 }, trigger: false,
+    id, name, connected: true,
+    sequence: -1, aim: { x: WORLD.width / 2, y: WORLD.height / 2 }, trigger: false,
     weapon: 'pistol', cooldowns: { pistol: 0, shotgun: 0, blaster: 0, rocket: 0 },
     heat: 0, overheated: false, unlocked: ['pistol'], damage: 0, shots: 0, hits: 0,
     hp: PLAYER_HP, maxHp: PLAYER_HP, blocked: 0,
   }
 }
 
-export function createGame(seed = 42, playerIds = ['local']): GameState {
+export function createGame(seed = 42, playerIds = ['local'], coop = false): GameState {
   const players: Record<string, PlayerState> = Object.create(null)
   for (const id of playerIds) players[id] = createPlayer(id)
   return {
-    status: 'ready', seed, rng: seed >>> 0, tick: 0, elapsed: 0, duration: RUN_DURATION,
+    status: 'ready', coop, seed, rng: seed >>> 0, tick: 0, elapsed: 0, duration: RUN_DURATION,
     duck: {
       x: WORLD.width / 2, y: 205, hp: BOSS_HP, maxHp: BOSS_HP, phase: 0,
       vulnerable: true, dashing: false, warning: false, facing: 1,
     },
+    teamDamage: 0,
     players, projectiles: [], threats: [],
     attackTimer: ATTACK_INTERVAL[0], nextProjectileId: 0, nextThreatId: 0,
   }
+}
+
+/** A seat that can still act: connected, alive, and in the run. */
+export function activePlayers(state: GameState): PlayerState[] {
+  return Object.values(state.players).filter((player) => player.connected && player.hp > 0)
+}
+
+export function addPlayer(state: GameState, id: string, name = 'Hunter'): PlayerState {
+  const player = createPlayer(id, name)
+  state.players[id] = player
+  return player
+}
+
+export function removePlayer(state: GameState, id: string) {
+  delete state.players[id]
+  state.threats = state.threats.filter((threat) => threat.playerId !== id)
+  state.projectiles = state.projectiles.filter((projectile) => projectile.playerId !== id)
+}
+
+/**
+ * A disconnect keeps the seat so a reconnecting player finds their damage and lives intact.
+ * The duck stops throwing eggs at an empty chair, and pending ones are cleared rather than landing.
+ */
+export function setConnected(state: GameState, id: string, connected: boolean): GameEvent[] {
+  const player = Object.hasOwn(state.players, id) ? state.players[id] : undefined
+  if (!player || player.connected === connected) return []
+  player.connected = connected
+  if (!connected) {
+    player.trigger = false
+    state.threats = state.threats.filter((threat) => threat.playerId !== id)
+  }
+  const events: GameEvent[] = []
+  if (state.status === 'running' && !activePlayers(state).length) endRun(state, false, events)
+  return events
 }
 
 export function clearTriggers(state: GameState) {
@@ -49,7 +85,7 @@ export function clearTriggers(state: GameState) {
 
 export function applyCommand(state: GameState, command: PlayerCommand): boolean {
   const player = Object.hasOwn(state.players, command.playerId) ? state.players[command.playerId] : undefined
-  if (!player || state.status !== 'running' || !Number.isSafeInteger(command.sequence)
+  if (!player || !player.connected || state.status !== 'running' || !Number.isSafeInteger(command.sequence)
     || command.sequence <= player.sequence || !Number.isFinite(command.aim.x)
     || !Number.isFinite(command.aim.y) || !player.unlocked.includes(command.weapon)) return false
   player.sequence = command.sequence
@@ -91,10 +127,14 @@ export function applyDamage(state: GameState, player: PlayerState, raw: number, 
   const amount = Math.min(state.duck.hp, Math.round(raw * resistance))
   state.duck.hp -= amount
   player.damage += amount
+  state.teamDamage += amount
   player.hits++
   events.push({ type: 'damage', playerId: player.id, amount, position: copyPoint(state.duck) })
+  // Solo earns its own weapons. Co-op unlocks on the team's total, since a fixed-health duck
+  // falls long before any single player in a large group reaches a personal threshold.
+  const progress = state.coop ? state.teamDamage : player.damage
   for (const weapon of WEAPON_ORDER) {
-    if (!player.unlocked.includes(weapon) && player.damage >= state.duck.maxHp * WEAPONS[weapon].unlock) {
+    if (!player.unlocked.includes(weapon) && progress >= state.duck.maxHp * WEAPONS[weapon].unlock) {
       player.unlocked.push(weapon)
       events.push({ type: 'unlock', playerId: player.id, weapon })
     }
@@ -103,7 +143,7 @@ export function applyDamage(state: GameState, player: PlayerState, raw: number, 
 }
 
 function spawnAttack(state: GameState, events: GameEvent[]) {
-  const targets = Object.values(state.players).filter((player) => player.hp > 0)
+  const targets = activePlayers(state)
   if (!targets.length) return
   const target = targets[Math.min(targets.length - 1, Math.floor(random(state) * targets.length))]
   const position = {
@@ -114,7 +154,7 @@ function spawnAttack(state: GameState, events: GameEvent[]) {
     id: state.nextThreatId++, playerId: target.id, position,
     age: 0, travel: ATTACK_TRAVEL[state.duck.phase],
   })
-  events.push({ type: 'attack', position: copyPoint(position) })
+  events.push({ type: 'attack', playerId: target.id, position: copyPoint(position) })
 }
 
 function removeThreat(state: GameState, threat: Threat) {
@@ -135,10 +175,10 @@ function intercept(state: GameState, player: PlayerState, aim: Point, events: Ga
 function land(state: GameState, threat: Threat, events: GameEvent[]) {
   removeThreat(state, threat)
   const player = state.players[threat.playerId]
-  if (!player || player.hp === 0) return
+  if (!player || !player.connected || player.hp === 0) return
   player.hp--
   events.push({ type: 'hurt', playerId: player.id, position: copyPoint(threat.position), hp: player.hp })
-  if (Object.values(state.players).every((other) => other.hp === 0)) endRun(state, false, events)
+  if (!activePlayers(state).length) endRun(state, false, events)
 }
 
 function fire(state: GameState, player: PlayerState, events: GameEvent[]) {
@@ -228,7 +268,7 @@ export function stepGame(state: GameState): GameEvent[] {
     const cooling = player.weapon !== 'blaster' || !player.trigger || player.overheated
     player.heat = Math.max(0, player.heat - (cooling ? 34 : 16) * STEP)
     if (player.heat <= 20) player.overheated = false
-    if (player.trigger && state.status === 'running' && player.hp > 0) fire(state, player, events)
+    if (player.trigger && state.status === 'running' && player.connected && player.hp > 0) fire(state, player, events)
   }
   return events
 }

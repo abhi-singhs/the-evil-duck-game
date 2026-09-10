@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { ATTACK_INTERVAL, BOSS_HP, PLAYER_HP, STEP, THREAT_RADIUS, WEAPONS } from './config'
 import {
-  applyCommand, applyDamage, bestAvailableWeapon, createGame, moveDuck, stepGame, threatRadius,
+  applyCommand, applyDamage, bestAvailableWeapon, createGame, moveDuck, setConnected, stepGame,
+  threatRadius,
 } from './simulation'
 import type { GameEvent, GameState, WeaponId } from './types'
 
@@ -356,5 +357,78 @@ describe('duck attacks and player health', () => {
     expect(state.players.bob.shots).toBe(1)
     expect(state.status).toBe('running')
     expect(state.duck.hp).toBeLessThan(BOSS_HP)
+  })
+})
+
+describe('co-op rules', () => {
+  const coop = (ids: string[]) => {
+    const state = createGame(42, ids, true)
+    state.status = 'running'
+    state.attackTimer = Infinity
+    return state
+  }
+
+  it('unlocks on team damage in co-op so a large group is not stuck with pistols', () => {
+    const state = coop(['alice', 'bob'])
+    const events: GameEvent[] = []
+    // Bob alone clears the shotgun threshold. Alice has done nothing, but the team has.
+    applyDamage(state, state.players.bob, BOSS_HP * WEAPONS.shotgun.unlock, events)
+    applyDamage(state, state.players.alice, 1, events)
+    expect(state.players.alice.unlocked).toContain('shotgun')
+    expect(state.teamDamage).toBeGreaterThan(BOSS_HP * WEAPONS.shotgun.unlock)
+  })
+
+  it('keeps unlocks personal in solo', () => {
+    const state = running(['alice', 'bob'])
+    const events: GameEvent[] = []
+    applyDamage(state, state.players.bob, BOSS_HP * WEAPONS.shotgun.unlock, events)
+    applyDamage(state, state.players.alice, 1, events)
+    expect(state.players.alice.unlocked).toEqual(['pistol'])
+    expect(state.players.bob.unlocked).toContain('shotgun')
+  })
+
+  it('never aims an attack at a disconnected player and drops the ones already flying', () => {
+    const state = coop(['alice', 'bob'])
+    state.attackTimer = STEP
+    while (!state.threats.length) stepGame(state)
+    const targeted = state.threats[0].playerId
+    setConnected(state, targeted, false)
+    expect(state.threats).toHaveLength(0)
+    state.attackTimer = STEP
+    for (let i = 0; i < 600 && state.status === 'running'; i++) stepGame(state)
+    expect(state.threats.every((threat) => threat.playerId !== targeted)).toBe(true)
+  })
+
+  it('stops a disconnected player from firing without ending the run', () => {
+    const state = coop(['alice', 'bob'])
+    setConnected(state, 'alice', false)
+    moveDuck(state)
+    expect(aim(state, 'pistol', 'alice')).toBe(false)
+    aim(state, 'pistol', 'bob')
+    stepGame(state)
+    expect(state.players.alice.shots).toBe(0)
+    expect(state.players.bob.shots).toBe(1)
+    expect(state.status).toBe('running')
+  })
+
+  it('ends the run when the last connected player drops', () => {
+    const state = coop(['alice', 'bob'])
+    setConnected(state, 'alice', false)
+    expect(state.status).toBe('running')
+    const events = setConnected(state, 'bob', false)
+    expect(state.status).toBe('lost')
+    expect(events).toContainEqual({ type: 'end', won: false })
+  })
+
+  it('gives a reconnecting player their seat back with damage and lives intact', () => {
+    const state = coop(['alice', 'bob'])
+    applyDamage(state, state.players.alice, 500, [])
+    state.players.alice.hp = 3
+    setConnected(state, 'alice', false)
+    setConnected(state, 'alice', true)
+    expect(state.players.alice.damage).toBe(500)
+    expect(state.players.alice.hp).toBe(3)
+    moveDuck(state)
+    expect(aim(state, 'pistol', 'alice')).toBe(true)
   })
 })
