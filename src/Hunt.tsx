@@ -51,13 +51,13 @@ export function Hunt({
         <div className="bar-actions">
           {multiplayer
             ? <span className="room-chip" title="Room code">ROOM {coop?.room ?? '····'}</span>
-            : <span className="coop-entry">
-              <button className="link-button" onClick={onCreateRoom}>
+            : (onCreateRoom || onJoinRoom) && <span className="coop-entry">
+              {onCreateRoom && <button className="link-button" onClick={onCreateRoom}>
                 <span className="wide">Create a room</span><span className="narrow">Create</span>
-              </button>
-              <button className="link-button" onClick={onJoinRoom}>
+              </button>}
+              {onJoinRoom && <button className="link-button" onClick={onJoinRoom}>
                 <span className="wide">Join a room</span><span className="narrow">Join</span>
-              </button>
+              </button>}
             </span>}
           <button className="icon-button" onClick={() => open('help')} aria-label="How to play">?</button>
           <button className="icon-button" aria-pressed={settings.muted} aria-label={settings.muted ? 'Unmute' : 'Mute'}

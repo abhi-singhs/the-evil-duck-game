@@ -2,6 +2,8 @@
 
 A browser boss hunt for one player or fifty. One duck has 26,000 HP, throws things at you, and gets worse every 30 seconds. You have two minutes, four weapons, and five lives.
 
+This branch is the demo starting point. Solo play works. The multiplayer components and server are prepared, but `src/App.tsx` does not connect them yet. The scoreboard runtime and renderer are prepared without a registered canvas. The public production game is unchanged.
+
 React and TypeScript render the interface. Canvas 2D draws the original pixel art. Solo runs entirely in the browser with no account and no backend. Co-op rooms run the fight on a Node server over WebSockets.
 
 ## Run locally
@@ -41,6 +43,25 @@ Live at [ca-evil-duck.happycoast-7ae1ae03.westus2.azurecontainerapps.io](https:/
 ```
 
 The script creates anything missing and updates what exists, so the first deploy and every redeploy use the same command. It tags the image with the current git sha, then checks the health endpoint, the page, and a byte-range request before it prints the URL. Pass `TAG=v3 ./deploy/deploy.sh` to ship a specific tag.
+
+Commit changes before deploying. Each image carries the full source revision, which `GET /version` returns as `{"revision":"<sha>"}` with caching disabled. A local process without build metadata returns `null`.
+
+### Demo deployment
+
+The separate demo app is [ca-evil-duck-demo.happycoast-7ae1ae03.westus2.azurecontainerapps.io](https://ca-evil-duck-demo.happycoast-7ae1ae03.westus2.azurecontainerapps.io/). The scoreboard runtime uses this origin.
+
+Do not use the production deployment command for the presentation. After the separate demo app has been provisioned and configured, use:
+
+```sh
+git push -u origin HEAD
+./deploy/deploy-demo.sh
+```
+
+This command only updates `ca-evil-duck-demo` with an image from `evil-duck-demo`. It refuses dirty or unpushed source, an unexpected target, and any request to provision resources. It builds in ACR for `linux/amd64`, waits for the new revision, and requires the source SHA, HTTP responses, and WebSocket upgrade to match.
+
+Provisioning the separately billed demo app and its managed image-pull identity is a preparation step, not part of the live command. It needs one replica, single-revision routing, and the same WebSocket ingress as the production app. Configure the scoreboard runtime with Azure's returned demo origin. Do not use the production origin as a fallback.
+
+Start both coding sessions from this demo branch, not `main`. One session integrates `src/App.tsx` with the prepared multiplayer components. The other creates `.github/extensions/duck-scoreboard/extension.mjs` using the prepared runtime. Combine and push both commits, then deploy once. Create the audience room after deployment because rooms do not survive replacing the server process.
 
 Resource names live in `deploy/azure.env` and can be overridden from the shell. The subscription is not pinned there: the script uses whatever `az account show` reports.
 
@@ -91,6 +112,8 @@ The game pauses when the tab becomes hidden, the window loses focus, or a frame 
 Portrait and landscape layouts use the same logical playfield. The page follows the device's light or dark preference. Append `?scoutTheme=dark` or `?scoutTheme=light` to override it.
 
 ## Play together
+
+These controls appear after the app integration is restored.
 
 Pick **Create a room** or **Join a room** in the header. The first time, the game asks what to call you and remembers it, so after that creating a room is a single click.
 
@@ -187,11 +210,13 @@ The list covers the whole room, including members who are disconnected or waitin
 
 ### The scoreboard canvas
 
-`.github/extensions/duck-scoreboard/` is a Copilot CLI canvas extension that watches the endpoint. Ask Copilot to open the duck scoreboard, give it a room code, and it polls once a second and renders the ranked room next to the raw JSON that produced it. The panel has its own room and server fields, and the agent can drive it with two actions: `watch_room` to repoint it, `read_scoreboard` to pull the current numbers into the conversation.
+`.github/extensions/duck-scoreboard/` contains the prepared runtime and renderer for a Copilot canvas that watches the endpoint. The demo baseline intentionally has no `extension.mjs`, so it registers no canvas. The live integration adds that SDK entry point and connects its open and close handlers, `watch_room`, and `read_scoreboard` to the runtime.
+
+After registration and extension reload, ask Copilot to open the duck scoreboard for a room. It polls once a second and renders the ranked room next to the raw JSON that produced it.
 
 The client patches the DOM in place instead of re-rendering it, which is what makes the motion possible: scores count up, bars ease to their new width, a rank change plays as a FLIP slide, and losing a life bursts the pip and flashes the row. `prefers-reduced-motion` turns all of it off.
 
-It reads the deployed server at `https://ca-evil-duck.happycoast-7ae1ae03.westus2.azurecontainerapps.io`, so the room code is the only thing it asks for.
+The demo origin must be configured explicitly. The panel shows which server it reads. The extension runs locally in Copilot and does not need another Azure deployment.
 
 The rules run as one copy, not two. `npm run build:core` bundles `src/game/simulation.ts` and the protocol into `server/core/game-core.mjs`, so the server enforces the same TypeScript the browser and the unit tests run.
 

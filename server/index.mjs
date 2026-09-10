@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { extname, join, resolve, sep } from 'node:path'
 import { attachGameServer, refuseWithoutUpgrade, serveRoomStats } from './game-server.mjs'
+import { serveVersion } from './version.mjs'
 
 const root = resolve(import.meta.dirname, '..', 'dist')
 const port = Number(process.env.PORT ?? 8080)
@@ -74,6 +75,7 @@ async function handle(request, response, registry) {
     response.writeHead(200, { 'content-type': 'text/plain' }).end('ok')
     return
   }
+  if (serveVersion(pathname, request, response)) return
   if (refuseWithoutUpgrade(pathname, response)) return
   if (serveRoomStats(pathname, registry, request, response)) return
 
