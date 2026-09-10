@@ -185,6 +185,12 @@ curl http://localhost:8080/api/rooms/TARH/players
 
 The list covers the whole room, including members who are disconnected or waiting out a run in progress, and neither of those ever appears in a snapshot. A member with no seat in the current run reports `null` for the per-run fields rather than zero, so "has not played" reads differently from "has hit nothing". `run` is `null` in the lobby. An unknown or malformed code answers `404` with `{"error":"no-room"}`.
 
+### The scoreboard canvas
+
+`.github/extensions/duck-scoreboard/` is a Copilot CLI canvas extension that watches the endpoint. Ask Copilot to open the duck scoreboard, give it a room code, and it polls once a second and renders the ranked room next to the raw JSON that produced it. The panel has its own room and server fields, and the agent can drive it with two actions: `watch_room` to repoint it, `read_scoreboard` to pull the current numbers into the conversation.
+
+It defaults to `http://127.0.0.1:8080`, so `npm run dev:server` is enough to see it work.
+
 The rules run as one copy, not two. `npm run build:core` bundles `src/game/simulation.ts` and the protocol into `server/core/game-core.mjs`, so the server enforces the same TypeScript the browser and the unit tests run.
 
 Bandwidth is the constraint, not CPU. A full room measured 12.6 Mbps and about 32 KB/s per client with all fifty firing:
