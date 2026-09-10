@@ -84,8 +84,10 @@ curl -fsS -o /dev/null -w 'index  %{http_code} in %{time_total}s\n' "https://$fq
 # Safari refuses to play the music unless the server answers byte ranges.
 curl -fsS -r 0-99 -o /dev/null -w 'audio  %{http_code} (expect 206)\n' "https://$fqdn/audio/chibi-ninja.mp3"
 # Co-op lives or dies on the upgrade handshake, so check it rather than assume the ingress passes it.
-# A successful upgrade holds the connection open, hence the timeout and the tolerated exit code.
-socket=$(curl -s -o /dev/null --max-time 6 -w '%{http_code}' \
+# Force HTTP/1.1: curl negotiates HTTP/2 over TLS by default, and an h2 request cannot carry an
+# HTTP/1.1 Upgrade, so it would report the plain GET response and look like a broken deployment.
+# A successful upgrade then holds the connection open, hence the timeout and the tolerated exit code.
+socket=$(curl -s -o /dev/null --http1.1 --max-time 6 -w '%{http_code}' \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
   -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "https://$fqdn/ws" || true)
 echo "socket $socket (expect 101)"

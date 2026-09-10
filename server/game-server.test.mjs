@@ -2,11 +2,18 @@ import { createServer } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
 import { ROOM_CAP } from './core/game-core.mjs'
-import { attachGameServer } from './game-server.mjs'
+import { attachGameServer, refuseWithoutUpgrade } from './game-server.mjs'
 
 let http
 let game
 let url
+
+/** Mirrors how server/index.mjs routes, using the same function it calls. */
+function route(request, response) {
+  const { pathname } = new URL(request.url, 'http://localhost')
+  if (refuseWithoutUpgrade(pathname, response)) return
+  response.writeHead(404).end()
+}
 
 /** A socket that queues everything it receives, so a test can wait for one message type. */
 function client() {
@@ -44,7 +51,7 @@ async function join(room = null, name = 'Bot') {
 }
 
 beforeAll(async () => {
-  http = createServer((_request, response) => response.writeHead(404).end())
+  http = createServer(route)
   game = attachGameServer(http)
   await new Promise((resolve) => http.listen(0, resolve))
   url = `ws://localhost:${http.address().port}/ws`
@@ -177,6 +184,14 @@ describe('the websocket endpoint', () => {
     bot.send({ t: 'leave' })
     await new Promise((resolve) => bot.socket.once('close', resolve))
     expect(bot.socket.readyState).toBe(WebSocket.CLOSED)
+  })
+
+  it('answers a plain GET on the game endpoint with 426 rather than the page', async () => {
+    // Serving index.html here would make a failed handshake look like a working endpoint, which
+    // is exactly how an HTTP/2 client reads it.
+    const response = await fetch(`http://localhost:${http.address().port}/ws`)
+    expect(response.status).toBe(426)
+    expect(response.headers.get('upgrade')).toBe('websocket')
   })
 
   it('refuses an upgrade on any path but the game endpoint', async () => {

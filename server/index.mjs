@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { extname, join, resolve, sep } from 'node:path'
-import { attachGameServer } from './game-server.mjs'
+import { attachGameServer, refuseWithoutUpgrade } from './game-server.mjs'
 
 const root = resolve(import.meta.dirname, '..', 'dist')
 const port = Number(process.env.PORT ?? 8080)
@@ -74,6 +74,7 @@ async function handle(request, response) {
     response.writeHead(200, { 'content-type': 'text/plain' }).end('ok')
     return
   }
+  if (refuseWithoutUpgrade(pathname, response)) return
 
   // Unknown paths fall back to the single page, but a missing asset stays a 404.
   const found = await fileFor(pathname)

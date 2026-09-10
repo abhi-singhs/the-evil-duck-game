@@ -7,6 +7,20 @@ import { RoomRegistry } from './rooms.mjs'
 
 const SWEEP_INTERVAL = 30_000
 
+/** The one place that knows where the game lives, for both the upgrade and the plain-GET reply. */
+export const GAME_PATH = '/ws'
+
+/**
+ * Answers a non-upgraded request to the game endpoint, and reports whether it did.
+ * Serving the page here would make a failed handshake look like a working endpoint, which is
+ * exactly how an HTTP/2 client reads it, since h2 cannot carry an HTTP/1.1 upgrade.
+ */
+export function refuseWithoutUpgrade(pathname, response) {
+  if (pathname !== GAME_PATH) return false
+  response.writeHead(426, { 'content-type': 'text/plain', upgrade: 'websocket' }).end('Upgrade required')
+  return true
+}
+
 /**
  * The authoritative side of the game. Clients send aim, trigger, and weapon; the server owns the
  * clock, the duck, hit detection, and health. Nothing a client sends carries damage or boss health,
@@ -128,7 +142,7 @@ export function attachGameServer(httpServer, options = {}) {
 
   httpServer.on('upgrade', (request, socket, head) => {
     const { pathname } = new URL(request.url, 'http://localhost')
-    if (pathname !== '/ws') {
+    if (pathname !== GAME_PATH) {
       socket.destroy()
       return
     }
