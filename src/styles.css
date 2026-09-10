@@ -159,6 +159,12 @@ a { color: var(--cp-accent); }
 .icon-button[aria-pressed="true"] { color: var(--cp-accent); }
 .link-button { color: var(--cp-text-muted); font-size: 12px; padding: 12px 0; }
 .link-button:hover { color: var(--cp-accent); }
+/* Create and join sit together, so they read as one choice rather than two stray links. */
+.coop-entry { display: flex; align-items: center; gap: 14px; margin-right: 6px; }
+.coop-entry .link-button { white-space: nowrap; }
+.coop-entry .link-button:first-child { color: var(--cp-accent); font-weight: 600; }
+.coop-entry .link-button:first-child:hover { color: var(--cp-accent-hover); }
+.coop-entry .narrow { display: none; }
 .best { font: 10px var(--mono); letter-spacing: 1px; color: var(--cp-text-muted); }
 
 .game { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; justify-content: center; }
@@ -311,13 +317,14 @@ a { color: var(--cp-accent); }
 .secondary-button:hover:not(:disabled) { border-color: var(--cp-accent); color: var(--cp-accent); }
 .secondary-button:disabled { opacity: 0.4; }
 .secondary-button[aria-pressed="true"] { border-color: var(--cp-success); color: var(--cp-success); }
-.coop-divider {
-  display: flex; align-items: center; gap: 12px;
-  font: 9px var(--mono); letter-spacing: 1.5px; color: var(--cp-text-muted);
+
+/* Reminds you which name the room will show, with a way out if it is wrong. */
+.coop-identity {
+  margin: 0; font-size: 12px; color: var(--cp-text-muted);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
 }
-.coop-divider::before, .coop-divider::after { content: ""; flex: 1; height: 1px; background: var(--cp-border); }
-.coop-code { display: flex; align-items: flex-end; gap: 10px; }
-.coop-code .field { flex: 1; }
+.coop-identity strong { color: var(--cp-text); font-weight: 600; }
+.coop-identity .link-button { padding: 0; text-decoration: underline; }
 .coop-share { display: flex; align-items: center; justify-content: center; gap: 12px; }
 .coop-share code {
   font: 700 26px var(--mono); letter-spacing: 6px; color: var(--cp-accent);
@@ -374,6 +381,10 @@ a { color: var(--cp-accent); }
   .hud { flex-wrap: wrap; gap: 8px 14px; }
   .health { flex-basis: 100%; }
   .timer { margin-right: auto; }
+  /* The header runs out of room before the game does, so the labels shorten first. */
+  .coop-entry { gap: 12px; }
+  .coop-entry .wide { display: none; }
+  .coop-entry .narrow { display: inline; }
 }
 @media (max-width: 520px) {
   .app { padding: 0 12px; gap: 10px; }
@@ -398,6 +409,8 @@ a { color: var(--cp-accent); }
   .app { max-width: none; height: 100dvh; min-height: 0; overflow: hidden; padding: 8px max(12px, env(safe-area-inset-left)); gap: 8px; }
   .app > footer.bar { display: none; }
   .bar { min-height: 36px; }
+  .coop-entry .wide { display: none; }
+  .coop-entry .narrow { display: inline; }
   .game { display: grid; grid-template-columns: minmax(0, 1fr) 180px; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
   .hud { grid-column: 1; gap: 14px; }
   .timer { font-size: 22px; }

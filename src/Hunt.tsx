@@ -21,12 +21,14 @@ type Props = {
   onComplete: (state: GameState) => void
   session?: GameSession
   coop?: CoopStatus | null
-  onCoop?: () => void
+  onCreateRoom?: () => void
+  onJoinRoom?: () => void
   onLeaveCoop?: () => void
 }
 
 export function Hunt({
-  settings, best, storageWarning, setSettings, onComplete, session, coop, onCoop, onLeaveCoop,
+  settings, best, storageWarning, setSettings, onComplete, session, coop,
+  onCreateRoom, onJoinRoom, onLeaveCoop,
 }: Props) {
   const [panel, setPanel] = useState<Panel | null>(null)
   const { state, player, notice, error, canvas, start, pause, selectWeapon } =
@@ -49,7 +51,14 @@ export function Hunt({
         <div className="bar-actions">
           {multiplayer
             ? <span className="room-chip" title="Room code">ROOM {coop?.room ?? '····'}</span>
-            : <button className="link-button" onClick={onCoop}>Play together</button>}
+            : <span className="coop-entry">
+              <button className="link-button" onClick={onCreateRoom}>
+                <span className="wide">Create a room</span><span className="narrow">Create</span>
+              </button>
+              <button className="link-button" onClick={onJoinRoom}>
+                <span className="wide">Join a room</span><span className="narrow">Join</span>
+              </button>
+            </span>}
           <button className="icon-button" onClick={() => open('help')} aria-label="How to play">?</button>
           <button className="icon-button" aria-pressed={settings.muted} aria-label={settings.muted ? 'Unmute' : 'Mute'}
             onClick={() => setSettings({ ...settings, muted: !settings.muted })}><SoundIcon muted={settings.muted} /></button>

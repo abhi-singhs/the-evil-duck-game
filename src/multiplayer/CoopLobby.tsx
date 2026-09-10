@@ -3,8 +3,10 @@ import type { CoopStatus } from '../net/RemoteSession'
 
 type Props = {
   status: CoopStatus
+  name: string
   onReady: (value: boolean) => void
   onStart: () => void
+  onRename: () => void
   onLeave: () => void
 }
 
@@ -16,7 +18,7 @@ function shareLink(room: string) {
 }
 
 /** The room between runs: who is here, who is ready, and the one button that starts the hunt. */
-export function CoopLobby({ status, onReady, onStart, onLeave }: Props) {
+export function CoopLobby({ status, name, onReady, onStart, onRename, onLeave }: Props) {
   const [copied, setCopied] = useState(false)
   const me = status.members.find((member) => member.id === status.playerId)
   const host = status.hostId === status.playerId
@@ -99,6 +101,13 @@ export function CoopLobby({ status, onReady, onStart, onLeave }: Props) {
           : <p className="coop-lede">Waiting for the host to start.</p>}
       </div>
       {status.error && <p className="coop-problem" role="alert">{status.error}</p>}
+      {present.length === 1 && (
+        // Only offered while the room is yours alone, since taking a new name starts a new room.
+        <p className="coop-identity">
+          Playing as <strong>{name}</strong>
+          <button className="link-button" type="button" onClick={onRename}>Change</button>
+        </p>
+      )}
       <button className="link-button" onClick={onLeave}>Leave room</button>
     </div>
   )

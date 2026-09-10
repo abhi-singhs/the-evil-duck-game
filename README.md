@@ -92,7 +92,9 @@ Portrait and landscape layouts use the same logical playfield. The page follows 
 
 ## Play together
 
-Click "Play together", pick a name, and start a room. You get a four-character code and a link. Anyone with either one joins the same duck, up to 50 players.
+Pick **Create a room** or **Join a room** in the header. The first time, the game asks what to call you and remembers it, so after that creating a room is a single click.
+
+Creating gives you a four-character code and a link. Anyone with either one joins the same duck, up to 50 players. Joining asks for the code, unless you opened an invite link, which fills it in for you.
 
 The room waits in a lobby between runs. Members can mark themselves ready, and the host starts the hunt. The host is whoever has been connected longest; if they leave, the next member takes over, so a room never loses its start button.
 
