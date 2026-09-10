@@ -1,7 +1,7 @@
 import { WebSocketServer } from 'ws'
 import {
   COMMAND_RATE_LIMIT, ERROR_TEXT, MAX_MESSAGE_BYTES, PING_INTERVAL, PING_TIMEOUT, ROOM_CAP, STEP,
-  filterEvents, parseClientMessage,
+  filterEvents, normalizeRoomCode, parseClientMessage,
 } from './core/game-core.mjs'
 import { RoomRegistry } from './rooms.mjs'
 
@@ -9,6 +9,9 @@ const SWEEP_INTERVAL = 30_000
 
 /** The one place that knows where the game lives, for both the upgrade and the plain-GET reply. */
 export const GAME_PATH = '/ws'
+
+/** Read-only scoreboard for one room: `/api/rooms/:code/players`. */
+const ROOM_STATS_PATH = /^\/api\/rooms\/([^/]+)\/players\/?$/
 
 /**
  * Answers a non-upgraded request to the game endpoint, and reports whether it did.
@@ -18,6 +21,33 @@ export const GAME_PATH = '/ws'
 export function refuseWithoutUpgrade(pathname, response) {
   if (pathname !== GAME_PATH) return false
   response.writeHead(426, { 'content-type': 'text/plain', upgrade: 'websocket' }).end('Upgrade required')
+  return true
+}
+
+/**
+ * Serves the score and health of everyone in a room, and reports whether it handled the request.
+ * The room lives in this process, so the numbers are the authoritative ones the fight runs on
+ * rather than a copy some client reported.
+ */
+export function serveRoomStats(pathname, registry, request, response) {
+  const match = ROOM_STATS_PATH.exec(pathname)
+  if (!match) return false
+  let raw = match[1]
+  try {
+    raw = decodeURIComponent(raw)
+  } catch { /* A malformed escape is simply not a room code. */ }
+  const code = normalizeRoomCode(raw)
+  const room = code ? registry.get(code) : null
+  const status = room ? 200 : 404
+  const body = JSON.stringify(room ? room.stats() : { error: 'no-room', message: ERROR_TEXT['no-room'] })
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(body),
+    // A scoreboard read a second ago is already wrong.
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  })
+  response.end(request.method === 'HEAD' ? undefined : body)
   return true
 }
 

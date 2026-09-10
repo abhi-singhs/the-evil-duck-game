@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { extname, join, resolve, sep } from 'node:path'
-import { attachGameServer, refuseWithoutUpgrade } from './game-server.mjs'
+import { attachGameServer, refuseWithoutUpgrade, serveRoomStats } from './game-server.mjs'
 
 const root = resolve(import.meta.dirname, '..', 'dist')
 const port = Number(process.env.PORT ?? 8080)
@@ -64,7 +64,7 @@ function parseRange(header, size) {
   return { start, end }
 }
 
-async function handle(request, response) {
+async function handle(request, response, registry) {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     response.writeHead(405, { allow: 'GET, HEAD' }).end()
     return
@@ -75,6 +75,7 @@ async function handle(request, response) {
     return
   }
   if (refuseWithoutUpgrade(pathname, response)) return
+  if (serveRoomStats(pathname, registry, request, response)) return
 
   // Unknown paths fall back to the single page, but a missing asset stays a 404.
   const found = await fileFor(pathname)
@@ -117,7 +118,7 @@ async function handle(request, response) {
 }
 
 const server = createServer((request, response) => {
-  handle(request, response).catch((error) => {
+  handle(request, response, game.registry).catch((error) => {
     console.error('request failed', error)
     if (!response.headersSent) response.writeHead(500, { 'content-type': 'text/plain' })
     response.end('Internal error')

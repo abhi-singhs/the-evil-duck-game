@@ -267,3 +267,53 @@ describe('the registry', () => {
     expect(registry.get(room.code)).toBeNull()
   })
 })
+
+describe('the room scoreboard', () => {
+  it('reports nulls in the lobby, because there is nothing to score yet', () => {
+    const room = makeRoom()
+    fill(room, 2)
+    const stats = room.stats()
+    expect(stats).toMatchObject({ room: 'TEST', status: 'lobby', members: 2, run: null })
+    expect(stats.players[0]).toMatchObject({ id: 'p0', host: true, score: null, hp: null, alive: null })
+  })
+
+  it('reports damage as score, with health, shots, and accuracy', () => {
+    const room = makeRoom()
+    const [host] = fill(room, 2)
+    room.start(host.member.id)
+    const player = room.state.players.p0
+    player.damage = 300
+    player.shots = 8
+    player.hits = 6
+    player.hp = 2
+
+    const stats = room.stats()
+    expect(stats.run).toMatchObject({ status: 'running', duration: room.state.duration, alive: 2 })
+    expect(stats.players[0]).toMatchObject({
+      score: 300, hp: 2, maxHp: player.maxHp, alive: true, shots: 8, hits: 6, accuracy: 0.75,
+    })
+  })
+
+  it('keeps listing a player who is waiting out a run they could not join', () => {
+    const room = makeRoom()
+    const [host] = fill(room, 1)
+    room.start(host.member.id)
+    const late = room.join('Latecomer')
+    const stats = room.stats()
+    expect(stats.players).toHaveLength(2)
+    expect(stats.players[1]).toMatchObject({ id: late.member.id, waiting: true, score: null, hp: null })
+  })
+
+  it('holds the final numbers on the result screen, until the room resets', () => {
+    const room = makeRoom()
+    const [host] = fill(room, 1)
+    room.start(host.member.id)
+    room.state.players.p0.damage = 1234
+    room.state.status = 'won'
+    room.advance(0.02)
+    expect(room.status).toBe('complete')
+    expect(room.stats().players[0].score).toBe(1234)
+    room.advance(999)
+    expect(room.stats()).toMatchObject({ status: 'lobby', run: null })
+  })
+})

@@ -296,6 +296,56 @@ export class Room {
     return { t: 'roster', mates }
   }
 
+  /**
+   * The whole room as plain JSON, for the HTTP endpoint. Snapshots are trimmed for bandwidth and
+   * split across two messages; this is the readable version, and it covers members who are
+   * disconnected or waiting out a run, who never appear in a snapshot at all.
+   *
+   * Score is damage dealt to the duck, which is what the in-game scoreboard ranks players by.
+   * Members with no seat in the current run report null rather than zero, so a caller can tell
+   * "has not played" apart from "has hit nothing".
+   */
+  stats() {
+    const state = this.state
+    return {
+      room: this.code,
+      status: this.status,
+      hostId: this.hostId,
+      cap: ROOM_CAP,
+      members: this.members.size,
+      run: state
+        ? {
+          status: state.status,
+          elapsed: round(state.elapsed, 2),
+          duration: state.duration,
+          teamDamage: state.teamDamage,
+          duck: { hp: state.duck.hp, maxHp: state.duck.maxHp, phase: state.duck.phase },
+          alive: activePlayers(state).length,
+        }
+        : null,
+      players: [...this.members.values()].map((member) => {
+        const player = state?.players[member.id] ?? null
+        return {
+          id: member.id,
+          name: member.name,
+          host: member.id === this.hostId,
+          connected: member.connected,
+          ready: member.ready,
+          waiting: member.waiting,
+          score: player ? player.damage : null,
+          hp: player ? player.hp : null,
+          maxHp: player ? player.maxHp : null,
+          alive: player ? player.connected && player.hp > 0 : null,
+          shots: player ? player.shots : null,
+          hits: player ? player.hits : null,
+          accuracy: player?.shots ? round(player.hits / player.shots, 3) : null,
+          blocked: player ? player.blocked : null,
+          weapon: player ? player.weapon : null,
+        }
+      }),
+    }
+  }
+
   expired(idleSeconds = EMPTY_ROOM_SECONDS) {
     if (this.members.size && [...this.members.values()].some((member) => member.connected)) return false
     return this.emptySince !== null && this.now() - this.emptySince > idleSeconds * 1000

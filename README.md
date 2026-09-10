@@ -134,9 +134,56 @@ The balance scenarios play the fight rather than only proving the duck can lose 
 
 ## The co-op server
 
-`server/index.mjs` serves files and hands `/ws` to `server/game-server.mjs`. `server/rooms.mjs` holds the rooms. One interval steps every running room at a fixed 60 Hz against real elapsed time, so a busy event loop slows the tick rate rather than the fight.
+`server/index.mjs` serves files and hands `/ws` to `server/game-server.mjs`. It also answers `GET /api/rooms/:code/players` from the same module. `server/rooms.mjs` holds the rooms. One interval steps every running room at a fixed 60 Hz against real elapsed time, so a busy event loop slows the tick rate rather than the fight.
 
 The server owns the clock, the duck, hit detection, and health. Clients send aim, a trigger, a weapon, and a sequence number. Nothing a client sends carries damage or boss health, so a tampered browser can only lie about where it is pointing. The server rejects out-of-range aim, replayed sequences, and weapons a player has not unlocked, then rate limits what survives.
+
+### The scoreboard endpoint
+
+`GET /api/rooms/:code/players` returns everyone in a room with their score and health so far, as JSON. Score is damage dealt to the duck, the same number the in-game scoreboard ranks by.
+
+```sh
+curl http://localhost:8080/api/rooms/TARH/players
+```
+
+```json
+{
+  "room": "TARH",
+  "status": "running",
+  "hostId": "p0",
+  "cap": 50,
+  "members": 1,
+  "run": {
+    "status": "running",
+    "elapsed": 12.4,
+    "duration": 120,
+    "teamDamage": 820,
+    "duck": { "hp": 25180, "maxHp": 26000, "phase": 0 },
+    "alive": 1
+  },
+  "players": [
+    {
+      "id": "p0",
+      "name": "Abhi",
+      "host": true,
+      "connected": true,
+      "ready": false,
+      "waiting": false,
+      "score": 820,
+      "hp": 4,
+      "maxHp": 5,
+      "alive": true,
+      "shots": 41,
+      "hits": 33,
+      "accuracy": 0.805,
+      "blocked": 2,
+      "weapon": "shotgun"
+    }
+  ]
+}
+```
+
+The list covers the whole room, including members who are disconnected or waiting out a run in progress, and neither of those ever appears in a snapshot. A member with no seat in the current run reports `null` for the per-run fields rather than zero, so "has not played" reads differently from "has hit nothing". `run` is `null` in the lobby. An unknown or malformed code answers `404` with `{"error":"no-room"}`.
 
 The rules run as one copy, not two. `npm run build:core` bundles `src/game/simulation.ts` and the protocol into `server/core/game-core.mjs`, so the server enforces the same TypeScript the browser and the unit tests run.
 

@@ -1,17 +1,18 @@
 import { createServer } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
-import { ROOM_CAP } from './core/game-core.mjs'
-import { attachGameServer, refuseWithoutUpgrade } from './game-server.mjs'
+import { PLAYER_HP, ROOM_CAP } from './core/game-core.mjs'
+import { attachGameServer, refuseWithoutUpgrade, serveRoomStats } from './game-server.mjs'
 
 let http
 let game
 let url
 
-/** Mirrors how server/index.mjs routes, using the same function it calls. */
+/** Mirrors how server/index.mjs routes, using the same functions it calls. */
 function route(request, response) {
   const { pathname } = new URL(request.url, 'http://localhost')
   if (refuseWithoutUpgrade(pathname, response)) return
+  if (serveRoomStats(pathname, game.registry, request, response)) return
   response.writeHead(404).end()
 }
 
@@ -198,5 +199,74 @@ describe('the websocket endpoint', () => {
     const stray = new WebSocket(`ws://localhost:${http.address().port}/nope`)
     await new Promise((resolve) => stray.once('error', resolve))
     expect(stray.readyState).toBe(WebSocket.CLOSED)
+  })
+})
+
+describe('the room scoreboard endpoint', () => {
+  const stats = (code) => fetch(`http://localhost:${http.address().port}/api/rooms/${code}/players`)
+
+  it('lists the lobby with no scores yet, because nobody has fired', async () => {
+    const host = await join(null, 'Host')
+    const { room } = await host.next('welcome')
+    const guest = await join(room, 'Guest')
+    await guest.next('welcome')
+
+    const response = await stats(room)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('application/json')
+    const body = await response.json()
+    expect(body).toMatchObject({ room, status: 'lobby', cap: ROOM_CAP, members: 2, run: null })
+    expect(body.players.map((player) => player.name)).toEqual(['Host', 'Guest'])
+    expect(body.players[0]).toMatchObject({ host: true, connected: true, score: null, hp: null })
+    host.close()
+    guest.close()
+  })
+
+  it('reports score and health for everyone once the run is going', async () => {
+    const host = await join(null, 'Host')
+    const { room } = await host.next('welcome')
+    const guest = await join(room, 'Guest')
+    await guest.next('welcome')
+    host.send({ t: 'start' })
+    await host.next('snapshot')
+
+    const body = await (await stats(room)).json()
+    expect(body.status).toBe('running')
+    expect(body.run).toMatchObject({ status: 'running', alive: 2 })
+    expect(body.run.duck.maxHp).toBe(26_000)
+    for (const player of body.players) {
+      expect(player).toMatchObject({
+        score: 0, hp: PLAYER_HP, maxHp: PLAYER_HP, alive: true, weapon: 'pistol',
+      })
+      // No shots fired yet, so accuracy is unknown rather than zero.
+      expect(player.accuracy).toBeNull()
+    }
+    host.close()
+    guest.close()
+  })
+
+  it('counts damage as score', async () => {
+    const host = await join(null, 'Host')
+    const { room } = await host.next('welcome')
+    host.send({ t: 'start' })
+    await host.next('snapshot')
+    const live = game.registry.get(room)
+    const [player] = Object.values(live.state.players)
+    player.damage = 450
+    player.shots = 10
+    player.hits = 4
+    player.hp = 3
+
+    const body = await (await stats(room)).json()
+    expect(body.players[0]).toMatchObject({ score: 450, hp: 3, shots: 10, hits: 4, accuracy: 0.4 })
+    host.close()
+  })
+
+  it('answers 404 for a code nobody is hosting, and for one that is not a code at all', async () => {
+    for (const code of ['QQQQ', 'nope', 'ZZZZ', '%%%%']) {
+      const response = await stats(code)
+      expect(response.status).toBe(404)
+      expect(await response.json()).toMatchObject({ error: 'no-room' })
+    }
   })
 })
