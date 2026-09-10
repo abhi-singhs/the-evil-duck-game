@@ -79,8 +79,7 @@ const STYLES = `
   }
   input:hover { border-color: var(--true-color-blue-muted, #54aeff); }
   input:focus-visible, button:focus-visible { outline: 2px solid var(--color-focus-outline, #0969da); outline-offset: 1px; }
-  input.code { width: 84px; text-transform: uppercase; letter-spacing: 3px; font-family: var(--font-mono, monospace); }
-  input.origin { width: 190px; font-size: var(--text-code-inline, 12px); }
+  input.code { width: 92px; text-transform: uppercase; letter-spacing: 3px; font-family: var(--font-mono, monospace); }
   button {
     background: var(--background-color-default, #fff);
     color: var(--text-color-default, #1f2328);
@@ -330,18 +329,15 @@ const CLIENT = `
   /* ---- controls -------------------------------------------------------- */
 
   let editing = false
-  for (const field of ['code', 'origin']) {
-    $(field).addEventListener('focus', () => { editing = true })
-    $(field).addEventListener('blur', () => { editing = false })
-  }
+  $('code').addEventListener('focus', () => { editing = true })
+  $('code').addEventListener('blur', () => { editing = false })
   $('controls').addEventListener('submit', async (event) => {
     event.preventDefault()
     $('code').blur()
-    $('origin').blur()
     await fetch('config', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code: $('code').value, origin: $('origin').value }),
+      body: JSON.stringify({ code: $('code').value }),
     })
   })
 
@@ -529,10 +525,7 @@ const CLIENT = `
   function apply(state) {
     $('endpoint').textContent = state.endpoint
     $('curl').textContent = 'curl ' + state.endpoint
-    if (!editing) {
-      $('code').value = state.code ?? ''
-      $('origin').value = state.origin
-    }
+    if (!editing) $('code').value = state.code ?? ''
     $('fetched').textContent = state.fetchedAt
       ? 'updated ' + new Date(state.fetchedAt).toLocaleTimeString()
       : ''
@@ -581,10 +574,8 @@ export function renderHtml() {
   <h1>Duck scoreboard</h1>
   <span class="live" id="live"><i></i>live</span>
   <form class="controls" id="controls">
-    <label class="muted" for="code">Room</label>
+    <label class="muted" for="code">Room code</label>
     <input class="code" id="code" name="code" maxlength="4" placeholder="ABCD" autocomplete="off" />
-    <label class="muted" for="origin">Server</label>
-    <input class="origin mono" id="origin" name="origin" placeholder="http://127.0.0.1:8080" autocomplete="off" />
     <button type="submit">Watch</button>
   </form>
 </header>

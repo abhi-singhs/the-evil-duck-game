@@ -8,7 +8,8 @@ import { createServer } from 'node:http'
 import { CanvasError, createCanvas, joinSession } from '@github/copilot-sdk/extension'
 import { renderHtml } from './renderer.mjs'
 
-const DEFAULT_ORIGIN = 'http://127.0.0.1:8080'
+/** The canvas always reads the deployed game server. Only the room code varies. */
+const GAME_ORIGIN = 'https://ca-evil-duck.happycoast-7ae1ae03.westus2.azurecontainerapps.io'
 const POLL_MS = 1000
 const FETCH_TIMEOUT_MS = 2500
 /** SSE dies quietly behind some proxies; a comment every so often keeps it honest. */
@@ -22,24 +23,12 @@ const normalizeCode = (value) => {
   return /^[A-Z0-9]{4}$/.test(code) ? code : null
 }
 
-const normalizeOrigin = (value) => {
-  if (typeof value !== 'string' || !value.trim()) return DEFAULT_ORIGIN
-  try {
-    const url = new URL(value.trim())
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return DEFAULT_ORIGIN
-    return url.origin
-  } catch {
-    return DEFAULT_ORIGIN
-  }
-}
-
-const endpointFor = (instance) =>
-  `${instance.origin}/api/rooms/${instance.code ?? ':code'}/players`
+const endpointFor = (instance) => `${GAME_ORIGIN}/api/rooms/${instance.code ?? ':code'}/players`
 
 /** What the iframe renders: either a room payload or a reason there isn't one. */
 const stateOf = (instance) => ({
   code: instance.code,
-  origin: instance.origin,
+  origin: GAME_ORIGIN,
   endpoint: endpointFor(instance),
   fetchedAt: instance.fetchedAt,
   error: instance.error,
@@ -85,9 +74,8 @@ async function poll(instance) {
   } catch (error) {
     instance.error = {
       kind: 'error',
-      title: `Cannot reach ${instance.origin}`,
-      detail: `${error.name === 'TimeoutError' ? 'The request timed out' : error.message}. `
-        + 'Start the game server with `npm run dev:server`.',
+      title: 'Cannot reach the game server',
+      detail: `${error.name === 'TimeoutError' ? 'The request timed out' : error.message} (${GAME_ORIGIN}).`,
     }
     instance.body = null
   }
@@ -143,7 +131,6 @@ function route(instance, request, response) {
   if (pathname === '/config' && request.method === 'POST') {
     readBody(request).then(async (body) => {
       instance.code = normalizeCode(body.code)
-      instance.origin = normalizeOrigin(body.origin)
       const state = await refresh(instance)
       response
         .writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
@@ -159,7 +146,6 @@ async function startInstance(instanceId, input) {
   const instance = {
     id: instanceId,
     code: normalizeCode(input?.code),
-    origin: normalizeOrigin(input?.origin),
     body: null,
     error: null,
     fetchedAt: null,
@@ -201,29 +187,22 @@ await joinSession({
         type: 'object',
         properties: {
           code: { type: 'string', description: 'Four-character room join code, such as TARH.' },
-          origin: {
-            type: 'string',
-            description: `Game server origin. Defaults to ${DEFAULT_ORIGIN}.`,
-          },
         },
         additionalProperties: false,
       },
       actions: [
         {
           name: 'watch_room',
-          description: 'Point the open scoreboard at a different room code or game server.',
+          description: 'Point the open scoreboard at a different room code.',
           inputSchema: {
             type: 'object',
-            properties: {
-              code: { type: 'string' },
-              origin: { type: 'string' },
-            },
+            properties: { code: { type: 'string' } },
+            required: ['code'],
             additionalProperties: false,
           },
           handler: async (ctx) => {
             const instance = instanceFor(ctx.instanceId)
-            if (ctx.input?.code !== undefined) instance.code = normalizeCode(ctx.input.code)
-            if (ctx.input?.origin !== undefined) instance.origin = normalizeOrigin(ctx.input.origin)
+            instance.code = normalizeCode(ctx.input?.code)
             return refresh(instance)
           },
         },
@@ -241,7 +220,6 @@ await joinSession({
           instances.set(ctx.instanceId, instance)
         } else if (ctx.input?.code) {
           instance.code = normalizeCode(ctx.input.code)
-          if (ctx.input.origin) instance.origin = normalizeOrigin(ctx.input.origin)
           await refresh(instance)
         }
         return {

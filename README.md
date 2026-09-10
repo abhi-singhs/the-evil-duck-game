@@ -191,7 +191,7 @@ The list covers the whole room, including members who are disconnected or waitin
 
 The client patches the DOM in place instead of re-rendering it, which is what makes the motion possible: scores count up, bars ease to their new width, a rank change plays as a FLIP slide, and losing a life bursts the pip and flashes the row. `prefers-reduced-motion` turns all of it off.
 
-It defaults to `http://127.0.0.1:8080`, so `npm run dev:server` is enough to see it work.
+It reads the deployed server at `https://ca-evil-duck.happycoast-7ae1ae03.westus2.azurecontainerapps.io`, so the room code is the only thing it asks for.
 
 The rules run as one copy, not two. `npm run build:core` bundles `src/game/simulation.ts` and the protocol into `server/core/game-core.mjs`, so the server enforces the same TypeScript the browser and the unit tests run.
 
