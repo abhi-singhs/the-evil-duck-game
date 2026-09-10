@@ -48,6 +48,8 @@ Commit changes before deploying. Each image carries the full source revision, wh
 
 ### Demo deployment
 
+The separate demo app is [ca-evil-duck-demo.happycoast-7ae1ae03.westus2.azurecontainerapps.io](https://ca-evil-duck-demo.happycoast-7ae1ae03.westus2.azurecontainerapps.io/). The scoreboard runtime uses this origin.
+
 Do not use the production deployment command for the presentation. After the separate demo app has been provisioned and configured, use:
 
 ```sh
