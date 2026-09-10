@@ -189,6 +189,8 @@ The list covers the whole room, including members who are disconnected or waitin
 
 `.github/extensions/duck-scoreboard/` is a Copilot CLI canvas extension that watches the endpoint. Ask Copilot to open the duck scoreboard, give it a room code, and it polls once a second and renders the ranked room next to the raw JSON that produced it. The panel has its own room and server fields, and the agent can drive it with two actions: `watch_room` to repoint it, `read_scoreboard` to pull the current numbers into the conversation.
 
+The client patches the DOM in place instead of re-rendering it, which is what makes the motion possible: scores count up, bars ease to their new width, a rank change plays as a FLIP slide, and losing a life bursts the pip and flashes the row. `prefers-reduced-motion` turns all of it off.
+
 It defaults to `http://127.0.0.1:8080`, so `npm run dev:server` is enough to see it work.
 
 The rules run as one copy, not two. `npm run build:core` bundles `src/game/simulation.ts` and the protocol into `server/core/game-core.mjs`, so the server enforces the same TypeScript the browser and the unit tests run.
